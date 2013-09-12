@@ -1,0 +1,7 @@
+
+erl_crash.dump
+*.beam
+/ebin/sflog.app
+
+
+
