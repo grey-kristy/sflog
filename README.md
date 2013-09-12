@@ -1,0 +1,4 @@
+sflog
+=====
+
+SimpleFileLOGger for Erlang
