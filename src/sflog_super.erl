@@ -10,7 +10,7 @@ init([]) ->
     {ok, {{one_for_one, 3, 10},
         [
         {local_logger, 
-            {sflog, start_link, []},
+            {sflog_server, start_link, []},
             permanent, 
             10000, 
             worker, 

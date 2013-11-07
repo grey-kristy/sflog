@@ -13,7 +13,7 @@ clean:
 	$(REBAR) skip_deps=true clean	
 
 test: compile
-	erl -pa ebin/ test/ -s sflog_test test_all -s init stop
+	erl -config priv/sflog.config -pa ebin/ test/ -s sflog_test test_all -s init stop
 
 
 .PHONY:	clean test
