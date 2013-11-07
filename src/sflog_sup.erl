@@ -1,4 +1,4 @@
--module(sflog_super).
+-module(sflog_sup).
 -behaviour(supervisor).     
 
 -export([start_link/0, init/1]).

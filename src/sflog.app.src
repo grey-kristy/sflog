@@ -1,7 +1,7 @@
 {application, sflog, 
  [{description, "SimpleFileLOGger for Erlang"},
   {vsn, "1.0"},
-  {modules, [sflog, sflog_super, sflog_app]},	
+  {modules, [sflog, sflog_server, sflog_sup, sflog_app]},	
   {registered,[sflog]},
   {applications, [kernel,stdlib]},
   {mod, {sflog_app,[]}},
