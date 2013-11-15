@@ -1,6 +1,11 @@
 -module(sflog).
 
+-export([start/0]).
 -export([err/1, err/2, err/3, info/1, info/2, info/3, debug/1, debug/2, debug/3]).
+
+
+start() ->
+    application:start(sflog).
 
 %% Interface
 
