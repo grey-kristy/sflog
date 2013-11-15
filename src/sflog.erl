@@ -39,7 +39,7 @@ err(Channel, Msg, Args) when is_atom(Channel), is_list(Msg) ->
 
 %% Internal functions
 
-log(none, Level, Msg, Args) -> ok;
+log(none, _Level, _Msg, _Args) -> ok;
 log(Channel, Level, Msg, Args) ->
     gen_server:call(sflog, {log, {Channel, Level, Msg, Args}}).
 
