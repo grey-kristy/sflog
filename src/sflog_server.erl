@@ -49,29 +49,29 @@ handle_call({log, {Channel, Level, Msg, Args}}, _From, State) ->
         Ch -> Ch
     end,
     write_log(Level, Msg, Args, S, LogFile),
-    Reply = ok,
-    {reply, Reply, State};
+    {reply, ok, State};
 
-handle_call({set_path, {LogFile, S, _Opts}}, _From, _State) ->
-    {reply, ok, {LogFile, S, 0}};
+handle_call({set_path, {_LogFile, _S}}, _From, State) ->
+%%  ToDo: set path for all channels
+    {reply, ok, State};
+
+handle_call({status}, _From, State) ->
+    {reply, State, State};
 
 handle_call(stop, _From, Tab) ->
     {stop, normal, stopped, Tab};
 
-handle_call(_Request, _From, State) -> 
-    io:format("handle_call: unknown message: ~p", [_Request]),
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(Request, _From, State) -> 
+    io:format("handle_call: unknown message: ~p", [Request]),
+    {reply, error, State}.
 
 format_date() ->
     {{_,M,D}, {H,Mi,S}} = erlang:localtime(),
     io_lib:format("~.2.0w/~.2.0w ~.2.0w:~.2.0w:~.2.0w", [M,D, H,Mi,S]).
 
 write_log(Level, Msg, Args, S, _LogFile) ->
-%   {ok, S} = file:open(_LogFile, [append]),
     Format = "[~.5s] ~s " ++ Msg ++ "~n",
     io:format(S, Format, [Level, format_date()] ++ Args),
-%   file:close(S),
     ok.
 
 %debug_out(Msg, Args) ->
@@ -166,13 +166,13 @@ daily_rotate(LogFile, Date) ->
     {{_,_M,NewDay}, {_,_NewMi,_}} = NewDate,
     case OldDay == NewDay of
         true -> none;
-        false -> do_rotate_daily(LogFile)
+        false -> do_rotate_daily(LogFile, Date)
     end.
 
-do_rotate_daily(LogFile) ->
+do_rotate_daily(LogFile, Date) ->
     case filelib:file_size(LogFile) > 0 of
         true -> 
-            {{Y,M,D}, {_H,_Mi,_}} = calendar:local_time(),
+            {{Y,M,D}, {_H,_Mi,_}} = Date,
             NewFile = io_lib:format("~s.~4..0B.~2..0B.~2..0B", [LogFile, Y,M,D]),
 %            io:format("ROTATE: ~p => ~p~n", [LogFile, NewFile]),
             file:rename(LogFile, NewFile);
