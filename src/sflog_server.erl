@@ -4,56 +4,86 @@
 -export([start_link/0, set_path/2, init/1, handle_call/3]).
 -export([handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
--export([read_channels/1]).
-
 -define(FLUSH_INTERVAL, 1000).                  % 1 second
 -define(ROTATE_COUNT, 60).                      % Once in 1 minutes
 -define(DEFAULT_LOG_SIZE, 10 * 1024 * 1024).    % 10Mb
 -define(DEFAULT_BACKUP_FILES, 5).    
 
+-define(LEVELS, [{debug, 1}, {info, 2}, {warn, 3}, {error, 4}, {crit, 5}, {none, 6}]).
+
+-record(channel, {
+    logfile,
+    logname,
+    logpath,
+    fh,
+    date,
+    counter = 0,
+    rotate = size,
+    level = debug
+}).
+
 
 start_link() ->
-    LogPath = get_env(logdir, "/tmp"),
-    LogFile = get_env(logfile),
-    Channels = case get_env(channels) of
-        undefined -> [{default, LogFile}];
-        Chnls -> read_channels(Chnls)
-    end,
-    gen_server:start_link({local, sflog}, ?MODULE, [{LogPath, Channels}], []).
+    gen_server:start_link({local, sflog}, ?MODULE, [], []).
 
-init([{LogPath, AllChannels}]) ->
+init([]) ->
     process_flag(trap_exit, true),
-    InitLog = fun(Filename, Opts, State) ->
-        LogFile = lists:flatten([LogPath, "/", Filename, ".log"]),
-        S = check_log_file(LogFile),
-        {LogFile, S, Opts, State}
-    end,
-    Now = calendar:local_time(),
-    LogFiles = [{Channel, InitLog(FN, Opts, {0, Now})} || {Channel, FN, Opts} <- AllChannels],
+    LogPath = get_env(logdir, "/tmp"),
+    ALLChannels = case get_env(channels) of
+        undefined -> [{default, get_opts(LogPath, get_env(logfile), [])}];
+        Chnls -> read_channels(LogPath, Chnls)
+    end,    
     erlang:send_after(?FLUSH_INTERVAL, self(), {flush}),
-    {ok, {LogFiles}}.
+    {ok, {ALLChannels}}.
 
-read_channels(AllChannels) ->
+read_channels(LogPath, AllChannels) ->
     Cook = fun
-        ({Channel, FN})         -> {Channel, FN, [{rotate, size}]};
-        ({Channel, FN, Opts})   -> {Channel, FN, Opts}
+        ({Channel, FN})         -> {Channel, get_opts(LogPath, FN, [])};
+        ({Channel, FN, Opts})   -> {Channel, get_opts(LogPath, FN, Opts)}
     end,
     [Cook(Channel) || Channel <- AllChannels].
+
+get_level(Level) ->
+    proplists:get_value(Level, ?LEVELS, 0).
+
+get_opts(LogPath, Filename, Opts) ->
+    LogFile = lists:flatten([LogPath, "/", Filename, ".log"]),
+    #channel{
+        logfile = LogFile,
+        fh = check_log_file(LogFile),
+        logpath = LogPath,
+        logname = Filename,
+        rotate = proplists:get_value(rotate, Opts, size),
+        level = proplists:get_value(log_level, Opts, debug),
+        date = calendar:local_time()
+    }.
 
 %% Server
 
 handle_call({log, {Channel, Level, Msg, Args}}, _From, State) -> 
     {AllChannels} = State, 
-    {LogFile, S, _Opts, _State} = case proplists:get_value(Channel, AllChannels) of
+    Ch = case proplists:get_value(Channel, AllChannels) of
         undefined -> proplists:get_value(default, AllChannels);
-        Ch -> Ch
+        Chln -> Chln
     end,
-    write_log(Level, Msg, Args, S, LogFile),
+    case get_level(Level) >= get_level(Ch#channel.level) of
+        true  -> write_log(Level, Msg, Args, Ch#channel.fh);
+        false -> ok
+    end,
     {reply, ok, State};
 
 handle_call({set_path, {_LogFile, _S}}, _From, State) ->
 %%  ToDo: set path for all channels
     {reply, ok, State};
+
+handle_call({set_log_level, {Channel, Level}}, _From, {AllChannels}) ->
+    State = case proplists:get_value(Channel, AllChannels) of
+        undefined -> 
+            AllChannels;
+        Ch -> 
+            lists:keyreplace(Channel, 1, AllChannels, {Channel, Ch#channel{level = Level}})
+    end,
+    {reply, ok, {State}};
 
 handle_call({status}, _From, State) ->
     {reply, State, State};
@@ -69,7 +99,7 @@ format_date() ->
     {{_,M,D}, {H,Mi,S}} = erlang:localtime(),
     io_lib:format("~.2.0w/~.2.0w ~.2.0w:~.2.0w:~.2.0w", [M,D, H,Mi,S]).
 
-write_log(Level, Msg, Args, S, _LogFile) ->
+write_log(Level, Msg, Args, S) ->
     Format = "[~.5s] ~s " ++ Msg ++ "~n",
     io:format(S, Format, [Level, format_date()] ++ Args),
     ok.
@@ -88,7 +118,7 @@ handle_info(_Info, State)  -> {noreply, State}.
 code_change(_OldVsn, N, _Extra) -> {ok, N}.
 
 terminate(_Reason, {AllChannels}) -> 
-    [file:close(S) || {_Channel, {_File, S, _Opts, _State}} <- AllChannels],
+    [file:close(Ch#channel.fh) || {_Channel, Ch} <- AllChannels],
     ok.
 
 %% Internal functions
@@ -138,26 +168,30 @@ size_rotate(LogFile) ->
         false -> none
     end.
 
-flush_file({Channel, {LogFile, S, Opts, {N, Date}}}) ->
-    file:close(S),
-    {N2, D2} = check_rotate(LogFile, Opts, N, Date),
-    S2 = check_log_file(LogFile),    
-    {Channel, {LogFile, S2, Opts, {N2, D2}}}.
+flush_file({Channel, Ch}) ->
+    file:close(Ch#channel.fh),
+    {N2, D2} = check_rotate(Ch#channel.logfile, Ch#channel.rotate, Ch#channel.counter, Ch#channel.date),
+    {Channel, Ch#channel{
+        fh = check_log_file(Ch#channel.logfile),
+        counter = N2,
+        date = D2
+    }}.
 
-check_rotate(LogFile, Opts, N, Date) ->
+check_rotate(LogFile, Rotate, N, Date) ->
     case N > ?ROTATE_COUNT of
         true -> 
-            manage_rotate(LogFile, Opts, Date), 
+            manage_rotate(LogFile, Rotate, Date), 
             {0, calendar:local_time()};
         false -> 
             {N+1, Date}
     end.
 
-manage_rotate(LogFile, Opts, Date) ->
-    case proplists:get_value(rotate, Opts, none) of
+manage_rotate(LogFile, Rotate, Date) ->
+    case Rotate of
         size  -> size_rotate(LogFile);
         daily -> daily_rotate(LogFile, Date);
-        none  -> ok
+        none  -> ok;
+        _ -> ok
     end.
 
 daily_rotate(LogFile, Date) ->

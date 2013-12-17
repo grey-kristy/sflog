@@ -6,7 +6,7 @@
 
 -export([crit/1, crit/2, crit/3, err/1, err/2, err/3, warn/1, warn/2, warn/3]).
 -export([info/1, info/2, info/3, debug/1, debug/2, debug/3]).
-
+-export([set_log_level/1, set_log_level/2]).
 
 start() ->
     application:start(sflog).
@@ -68,6 +68,10 @@ crit(Msg, Args) when is_list(Msg) ->
 crit(Channel, Msg, Args) when is_atom(Channel), is_list(Msg) ->
     log(Channel, crit, Msg, Args).
 
+set_log_level(Level) when is_atom(Level) ->
+    set_log_level(default, Level).
+set_log_level(Channel, Level) when is_atom(Channel), is_atom(Level) ->
+    gen_server:call(sflog, {set_log_level, {Channel, Level}}).
 
 %% Internal functions
 

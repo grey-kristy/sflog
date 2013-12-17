@@ -10,19 +10,43 @@
 chop(Msg) ->
     re:replace(Msg, "\n$", "", [{return, list}]).
 
+get_last_line(FileName) ->
+    {ok, Bin} = file:read_file(FileName),
+    Strings = binary:split(Bin, <<"\n">>, [trim, global]),
+%    ?debugFmt("file ~p ~p", [FileName, Strings]), 
+    Str = lists:nth(length(Strings), Strings),
+    binary_to_list(Str).
+
 log_test() ->
-    Msg = "Test",
-    ok = sflog:debug(Msg),
-    {ok, Bin} = file:read_file(?LOGFILE),
-    [Level, _Date, _Time | Text] = string:tokens(binary_to_list(Bin), " "),
+    Test = 45,
+    ok = sflog:debug("label ~p", [Test]),
+    Str = get_last_line(?LOGFILE),
+    [Level, _Date, _Tim, Label, Value |_] = string:tokens(Str, " "),
     ?assertEqual(Level, "[debug]"),
+    ?assertEqual(Label, "label"),
+    ?assertEqual(list_to_integer(Value), Test).
+
+log_err_test() ->
+    Msg = "Test",
+    ok = sflog:err(Msg),
+    Str = get_last_line(?LOGFILE),
+    [Level, _Date, _Time | Text] = string:tokens(Str, " "),
+    ?assertEqual(Level, "[error]"),
+    ?assertEqual(Msg, chop(Text)).
+
+log_info_test() ->
+    Msg = "LogLevelTest",
+    ok = sflog:info(Msg),
+    Str = get_last_line(?LOGFILE),
+    [Level, _, _Date, _Time | Text] = string:tokens(Str, " "),
+    ?assertEqual(Level, "[info"),
     ?assertEqual(Msg, chop(Text)).
 
 channel_test() ->
     Msg = "Test",
     ok = sflog:debug(detail, Msg, []),
-    {ok, Bin} = file:read_file(?CH_LOGFILE),
-    [Level, _Date, _Time | Text] = string:tokens(binary_to_list(Bin), " "),
+    Str = get_last_line(?CH_LOGFILE),
+    [Level, _Date, _Time | Text] = string:tokens(Str, " "),
     ?assertEqual(Level, "[debug]"),
     ?assertEqual(Msg, chop(Text)).
 
